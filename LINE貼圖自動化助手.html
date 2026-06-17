@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LINE 表情貼自動化助手</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0e1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+    ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#1a1d2e}::-webkit-scrollbar-thumb{background:#3d4a5c;border-radius:3px}
+    a{color:#60a5fa;text-decoration:none}a:hover{text-decoration:underline}
+
+    .card{background:#1a1f2e;border:1px solid #252d3d;border-radius:16px;padding:20px;margin-bottom:18px}
+    .card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:16px}
+
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .18s;white-space:nowrap}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .btn-orange{background:linear-gradient(135deg,#f97316,#ef4444);color:#fff}.btn-orange:hover:not(:disabled){filter:brightness(1.1)}
+    .btn-green{background:linear-gradient(135deg,#10b981,#059669);color:#fff}.btn-green:hover:not(:disabled){filter:brightness(1.1)}
+    .btn-ghost{background:#1e2535;border:1px solid #374151;color:#e2e8f0}.btn-ghost:hover{border-color:#64748b}
+    .btn-cyan{background:#0e7490;color:#fff}.btn-cyan:hover:not(:disabled){background:#0891b2}
+    .btn-sm{padding:4px 11px;font-size:12px;border-radius:7px}
+
+    .pill{padding:5px 14px;border-radius:20px;font-size:13px;cursor:pointer;border:2px solid;transition:all .18s;user-select:none;white-space:nowrap}
+    .drop-zone{border:2px dashed #374151;border-radius:14px;padding:44px 20px;text-align:center;cursor:pointer;transition:all .3s}
+    .drop-zone:hover,.drop-zone.over{border-color:#f97316;background:rgba(249,115,22,.06)}
+
+    .mode-tab{padding:7px 18px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .18s}
+    .mode-tab-on{background:#f97316;color:#fff}
+    .mode-tab-off{background:#1e2535;color:#64748b;border:1px solid #252d3d}
+    .mode-tab-off:hover{color:#94a3b8}
+
+    .sticker-grid{display:grid;gap:5px}
+    .sticker-thumb{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;background:#0a0c13;border:1px solid #1e2535;cursor:pointer;transition:transform .14s}
+    .sticker-thumb:hover{transform:scale(1.05);border-color:#f97316}
+    .sticker-thumb img{width:100%;height:100%;object-fit:cover}
+    .sticker-num{position:absolute;bottom:2px;right:3px;font-size:9px;color:#94a3b8;background:rgba(0,0,0,.65);padding:1px 4px;border-radius:2px;pointer-events:none}
+
+    .prog-track{height:5px;background:#1e2535;border-radius:3px;overflow:hidden;margin-top:10px}
+    .prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#f97316,#ec4899);transition:width .25s}
+
+    .info-box{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.22);border-radius:8px;padding:10px 14px;font-size:12px;color:#fbbf24;margin-bottom:14px;line-height:1.7}
+    .success-box{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#6ee7b7;line-height:1.8}
+
+    .prompt-area{background:#090c14;border:1px solid #1e2535;border-radius:8px;padding:14px;font-size:11.5px;line-height:1.9;color:#8ba0b8;max-height:220px;overflow-y:auto;white-space:pre-wrap;font-family:"Courier New",monospace}
+    .sec-label{font-size:12px;color:#64748b;margin-bottom:8px;font-weight:500}
+    select{background:#0e1117;border:1px solid #374151;border-radius:7px;color:#e2e8f0;padding:5px 10px;font-size:13px;cursor:pointer;outline:none}
+    select:focus{border-color:#f97316}
+    .check-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none}
+    .check-row input{width:15px;height:15px;accent-color:#10b981;cursor:pointer}
+
+    /* Grid editor */
+    .ge-container{position:relative;display:inline-block;cursor:crosshair;user-select:none;max-width:100%;line-height:0}
+    .ge-container img{display:block;max-width:100%;max-height:320px;border-radius:8px}
+    .ge-vline{position:absolute;top:0;height:100%;width:6px;cursor:col-resize;z-index:10;transform:translateX(-3px)}
+    .ge-vline-vis{position:absolute;top:0;left:2px;width:2px;height:100%;background:rgba(249,115,22,.85);border-left:2px dashed #f97316}
+    .ge-hline{position:absolute;left:0;width:100%;height:6px;cursor:row-resize;z-index:10;transform:translateY(-3px)}
+    .ge-hline-vis{position:absolute;left:0;top:2px;width:100%;height:2px;background:rgba(34,211,238,.85);border-top:2px dashed #22d3ee}
+    .ge-del{position:absolute;width:17px;height:17px;background:#ef4444;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:#fff;font-weight:700;z-index:20;line-height:1;border:none}
+    .ge-del:hover{background:#dc2626}
+
+    /* Step bar */
+    .step-dot{width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+    .step-dot-a{background:#f97316;color:#fff}.step-dot-d{background:#10b981;color:#fff}.step-dot-i{background:#252d3d;color:#4a5568}
+    .step-txt-a{color:#f97316;font-weight:600;font-size:13px}.step-txt-d{color:#10b981;font-size:13px}.step-txt-i{color:#4a5568;font-size:13px}
+    .step-line{height:2px;width:22px;flex-shrink:0}
+
+    @keyframes stepBlink {
+      0%,100% { box-shadow: inset 0 0 0 0px rgba(249,115,22,0), inset 0 0 0 0px rgba(249,115,22,0); }
+      50%      { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.9), 0 0 12px rgba(249,115,22,0.25); }
+    }
+    .step-card-active { animation: stepBlink 1.3s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+/* ─── Constants ─── */
+const STYLES   = ['通用 Q版','影視臉型','水彩手繪','蘋果插畫','格鬥風格','家系模型','日本動漫'];
+const PALETTES = [
+  {label:'鮮豔風 (LINE 感)',color:'#f97316'},{label:'柔和溫柔 (糖果粉)',color:'#ec4899'},
+  {label:'清爽冷冽',color:'#06b6d4'},{label:'玄古初韵',color:'#b45309'},{label:'夢幻粉彩',color:'#a855f7'},
+];
+const CATEGORIES = ['日常用語','打招呼','嗯嗯社媒','職場應用','節慶祝福','秘密行動'];
+const POSES = {
+  '日常用語':['開心大笑雙手舉高','比讚OK手勢','害羞遮臉紅暈','生氣冒火花跺腳','哭泣淚流滿面','驚訝張大嘴','困惑頭上問號','睡著ZZZ','無奈攤手','得意叉腰','緊張冒汗','興奮雙拳握緊','委屈嘟嘴','讚美拍手鼓掌','疑惑歪頭','嚇到跳起','開心翻滾','加油衝刺','思考摸下巴','耍帥比剪刀手'],
+  '打招呼':['揮手打招呼','早安伸懶腰','晚安抱枕頭','歡迎張開雙臂','再見揮手','鞠躬行禮','飛吻送愛心','歡呼跳躍','微笑點頭','搖手拜拜'],
+  '嗯嗯社媒':['自拍姿勢','愛心手勢','比YA自拍','轉圈展示','眨眼俏皮','撒嬌捲毛','跳舞扭腰','臉紅心跳','冷漠無表情','大笑倒地'],
+  '職場應用':['加油打氣衝刺','努力工作打字','開會打瞌睡','期待眼神發光','沮喪趴地','哈欠打嗑睡','咬牙忍耐','暈眩眼睛轉圈','嘟嘴不服氣','吃東西開心'],
+  '節慶祝福':['生日蛋糕慶生','新年恭賀拱手','聖誕帽開心','元旦禮花撒紙片','情人節愛心','萬聖節扮鬼','端午粽子奔跑','中秋賞月微笑','過年紅包滿天飛','感謝捧花鞠躬'],
+  '秘密行動':['神秘遮口微笑','偷窺探頭','惡作劇壞笑','裝無辜眨眼','嘿嘿壞笑','閉嘴拉鍊手勢','捂耳不聽','捂嘴不說','偷偷躲在角落','秘密比手勢'],
+};
+const DEFAULT_40 = ['開心大笑雙手舉高','比讚OK手勢','害羞遮臉紅暈','生氣冒火花跺腳','哭泣淚流滿面','驚訝張大嘴','困惑頭上問號','睡著ZZZ','無奈攤手','得意叉腰','緊張冒汗','興奮雙拳握緊','委屈嘟嘴','讚美拍手鼓掌','疑惑歪頭','嚇到跳起','開心翻滾','加油衝刺','思考摸下巴','耍帥比剪刀手','愛心眼睛','暈眩眼睛轉圈','咬牙忍耐','歡呼雙臂張開','打噴嚏遮口','眨眼俏皮','哈欠打嗑睡','微笑點頭','搖手拜拜','吃東西開心','蜷縮哭泣','跳舞開心扭腰','撒嬌捲毛','嘟嘴生氣鼓腮幫','臉紅心跳','冷漠無表情','大笑倒地','期待眼神發光','沮喪趴地','勝利比YA'];
+
+function getPoses(cats) {
+  if (!cats.length) return DEFAULT_40;
+  let pool = [];
+  for (const c of cats) pool = pool.concat(POSES[c]||[]);
+  pool = [...new Set(pool)];
+  const extra = DEFAULT_40.filter(p=>!pool.includes(p));
+  while (pool.length < 40) pool.push(extra.shift()||'開心揮手');
+  return pool.slice(0,40);
+}
+
+function buildPrompt({format,source,style,palette,cats,customName,cols,rows}) {
+  const count = cols*rows;
+  const srcLabel = source==='reference' ? '【參考上傳圖片 (Reference Upload)】' : `【${customName||'自訂角色'}】`;
+  const fmtNote  = format==='character' ? '✕ 不包含任何文字內容。' : format==='charText' ? '✓ 每格可包含簡短情緒詞（4 字以內）。' : '✓ 以大字體情緒文字為主視覺，角色縮小於角落。';
+  const poses = getPoses(cats);
+  const list  = poses.map((p,i)=>`${String(i+1).padStart(2,'0')}. ${p}`).join('\n');
+  return `請生成一張包含 ${count} 個不同動作與表情的 ${srcLabel} 貼圖集大圖。\n\n【最高優先級約束】\n・大圖規格：${cols*328} × ${rows*328} px\n・網格結構：${cols} 欄 × ${rows} 列\n・背景：#00FF00（純綠色，方便去背）\n・強制畫中：貼圖之間保留 30px 間隔。\n\n【風格與配色】\n・角色設定：請嚴格參考上傳圖片中的角色特徵（髮型、服裝、五官、配色），保持完全一致。\n・畫風設定：${style}，可愛、活潑、3D 平圖\n・配色風格：${palette}，高飽和度、色彩鮮明、對比度高，典型 LINE 貼圖配色。\n\n【畫面內容規範】\n・每一格僅包含：單一角色本體。\n・${fmtNote}\n\n【內容清單】\n${list}\n\n---\n✨ 提示詞由 LINE 表情貼自動化助手生成`;
+}
+
+/* ─── Auto-detect grid ───
+   Strategy: compute grayscale standard-deviation profile per column/row.
+   Separator bands have LOW std-dev (uniform background colour);
+   sticker content has HIGH std-dev.  Find consecutive "valley" runs
+   (std-dev ≤ threshold), strip head/tail padding, count interior valleys
+   as separators.  Adapted from richfly2u.github.io/modules/grid-detect.js
+─── */
+function autoDetectGrid(imgURL) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const W = img.naturalWidth, H = img.naturalHeight;
+
+      // Downscale for speed (max 800px on longest side)
+      const MAX_SAMPLE = 800;
+      const scale = Math.min(1, MAX_SAMPLE / Math.max(W, H));
+      const w = Math.max(1, Math.round(W * scale));
+      const h = Math.max(1, Math.round(H * scale));
+
+      const cvs = document.createElement('canvas');
+      cvs.width = w; cvs.height = h;
+      const ctx = cvs.getContext('2d', {willReadFrequently: true});
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+
+      // Grayscale
+      const gray = new Float32Array(w * h);
+      for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+        gray[i] = 0.299 * data[p] + 0.587 * data[p+1] + 0.114 * data[p+2];
+      }
+
+      // Per-axis std-dev profile (vertical=true → one value per column)
+      const axisProfile = (vertical) => {
+        const len = vertical ? w : h;
+        const n   = vertical ? h : w;
+        const out = new Float32Array(len);
+        for (let i = 0; i < len; i++) {
+          let sum = 0, sq = 0;
+          for (let j = 0; j < n; j++) {
+            const v = vertical ? gray[j*w+i] : gray[i*w+j];
+            sum += v; sq += v*v;
+          }
+          const mean = sum/n;
+          out[i] = Math.sqrt(Math.max(0, sq/n - mean*mean));
+        }
+        return out;
+      };
+
+      // Moving-average smooth
+      const smooth = (arr, radius) => {
+        const out = new Float32Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+          let sum = 0, n = 0;
+          for (let j = Math.max(0,i-radius); j <= Math.min(arr.length-1,i+radius); j++) {
+            sum += arr[j]; n++;
+          }
+          out[i] = sum/n;
+        }
+        return out;
+      };
+
+      // Analyse one axis profile → { count, padA, padB, fracs } or null
+      const analyzeAxis = (profile, maxCount) => {
+        const len = profile.length;
+        const sm  = smooth(profile, Math.max(1, Math.round(len * 0.004)));
+
+        // Adaptive threshold: 5th/95th percentile dynamic range
+        const sorted = Array.from(sm).sort((a,b) => a-b);
+        const lo = sorted[Math.floor(sorted.length * 0.05)];
+        const hi = sorted[Math.floor(sorted.length * 0.95)];
+        if (hi - lo < 2) return null; // no contrast → cannot detect
+        const t  = lo + 0.3 * (hi - lo);
+
+        // Collect consecutive low-std-dev "valley" runs
+        const runs = [];
+        let s = -1;
+        for (let i = 0; i <= len; i++) {
+          const isGap = i < len && sm[i] <= t;
+          if (isGap && s < 0) s = i;
+          if (!isGap && s >= 0) { runs.push({start:s, end:i-1}); s=-1; }
+        }
+
+        // Head/tail valleys touching edges = outer padding
+        let padA = 0, padB = 0, interior = runs;
+        if (interior.length && interior[0].start === 0) {
+          padA = interior[0].end + 1; interior = interior.slice(1);
+        }
+        if (interior.length && interior[interior.length-1].end === len-1) {
+          padB = len - interior[interior.length-1].start;
+          interior = interior.slice(0, -1);
+        }
+
+        // Discard overly wide "valleys" (>20% of axis) — not separators
+        interior = interior.filter(r => (r.end - r.start + 1) <= len * 0.2);
+
+        const count = interior.length + 1;
+        if (count > maxCount) return null;
+
+        const effLen = len - padA - padB;
+        if (effLen < len * 0.3) return null; // effective area too small
+
+        // Separator fractions relative to the effective region
+        const fracs = interior.map(r => ((r.start + r.end) / 2 - padA) / effLen);
+
+        // Reject if any cell is too narrow
+        const bounds = [0, ...fracs, 1];
+        for (let i = 1; i < bounds.length; i++) {
+          if (bounds[i] - bounds[i-1] < 0.04) return null;
+        }
+
+        return { count, padA: padA/len, padB: padB/len, fracs };
+      };
+
+      const colRes = analyzeAxis(axisProfile(true),  15);
+      const rowRes = analyzeAxis(axisProfile(false), 12);
+
+      // Convert effective-region fractions → full-image fractions
+      const toFullFracs = (res) => {
+        if (!res || !res.fracs.length) return [];
+        const { padA, padB, fracs } = res;
+        const effLen = 1 - padA - padB;
+        return fracs.map(f => padA + f * effLen);
+      };
+
+      resolve({ hCuts: toFullFracs(rowRes), vCuts: toFullFracs(colRes) });
+    };
+    img.onerror = () => resolve({hCuts:[],vCuts:[]});
+    img.src = imgURL;
+  });
+}
+
+/* ─── Pill ─── */
+function Pill({label,selected,color,onClick}){
+  return <button onClick={onClick} style={{padding:'5px 14px',borderRadius:'20px',fontSize:'13px',cursor:'pointer',border:`2px solid ${selected?color:'#2d3748'}`,background:selected?color:'transparent',color:selected?'#fff':'#94a3b8',transition:'all .18s',whiteSpace:'nowrap',userSelect:'none'}}>{label}</button>;
+}
+
+/* ─── Step dot ─── */
+function StepDot({n,cur,label}){
+  const done=cur>n, active=cur===n;
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
+      {n>1&&<div className="step-line" style={{background:done||active?'#10b981':'#252d3d'}}/>}
+      <div className={`step-dot ${active?'step-dot-a':done?'step-dot-d':'step-dot-i'}`}>{done?'✓':n}</div>
+      <span className={active?'step-txt-a':done?'step-txt-d':'step-txt-i'}>{label}</span>
+    </div>
+  );
+}
+
+/* ─── Step Guide ─── */
+function StepGuide({cur}) {
+  const steps = [
+    {icon:'✍️', title:'提示詞填入', desc:'選擇角色風格與動作，下方填好後複製 Prompt'},
+    {icon:'🤖', title:'複製並生成圖', desc:'貼到 ChatGPT / Gemini，生成網格貼圖大圖後儲存'},
+    {icon:'✂️', title:'切割並上架', desc:'上傳大圖 → 自動切割 → 打包 ZIP → 上傳 LINE'},
+  ];
+  return (
+    <div style={{display:'flex',marginBottom:'20px',background:'#1a1f2e',borderRadius:'14px',border:'1px solid #252d3d',overflow:'hidden'}}>
+      {steps.map((s,i) => {
+        const n=i+1, done=cur>n, active=cur===n;
+        return (
+          <div key={i} className={active?'step-card-active':''} style={{flex:1,padding:'14px 16px',borderRight:i<2?'1px solid #252d3d':'none',
+            background:active?'rgba(249,115,22,.07)':'transparent',transition:'background .2s'}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'5px'}}>
+              <div style={{width:'22px',height:'22px',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:'11px',fontWeight:'700',flexShrink:0,
+                background:done?'#10b981':active?'#f97316':'#252d3d',
+                color:done||active?'#fff':'#4a5568'}}>
+                {done?'✓':n}
+              </div>
+              <span style={{fontSize:'13px',fontWeight:'700',
+                color:done?'#10b981':active?'#f97316':'#4a5568'}}>{s.title}</span>
+              {active&&<span style={{fontSize:'10px',background:'#f97316',color:'#fff',padding:'1px 7px',borderRadius:'20px',marginLeft:'2px'}}>進行中</span>}
+            </div>
+            <div style={{fontSize:'12px',color:'#64748b',lineHeight:'1.6',paddingLeft:'30px'}}>{s.desc}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Grid Editor ─── */
+function GridEditor({imgURL, vLines, hLines, setVLines, setHLines}) {
+  const containerRef = useRef(null);
+  const [drag, setDrag] = useState(null); // {type:'v'|'h', idx}
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const clamp = (v,lo=0.005,hi=0.995) => Math.max(lo,Math.min(hi,v));
+      if (drag.type==='v') {
+        const x = clamp((e.clientX-rect.left)/rect.width);
+        setVLines(p => { const n=[...p]; n[drag.idx]=x; return n; });
+      } else {
+        const y = clamp((e.clientY-rect.top)/rect.height);
+        setHLines(p => { const n=[...p]; n[drag.idx]=y; return n; });
+      }
+    };
+    const onUp = () => {
+      setVLines(p=>[...p].sort((a,b)=>a-b));
+      setHLines(p=>[...p].sort((a,b)=>a-b));
+      setDrag(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
+  }, [drag, setVLines, setHLines]);
+
+  const startV = (i) => (e) => { e.preventDefault(); e.stopPropagation(); setDrag({type:'v',idx:i}); };
+  const startH = (i) => (e) => { e.preventDefault(); e.stopPropagation(); setDrag({type:'h',idx:i}); };
+  const delV   = (i) => (e) => { e.stopPropagation(); setVLines(p=>p.filter((_,j)=>j!==i)); };
+  const delH   = (i) => (e) => { e.stopPropagation(); setHLines(p=>p.filter((_,j)=>j!==i)); };
+
+  const onContainerClick = (e) => {
+    if (drag) return;
+    if (e.target.closest('.ge-del') || e.target.closest('.ge-vline') || e.target.closest('.ge-hline')) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (e.clientX-rect.left)/rect.width;
+    const y = (e.clientY-rect.top)/rect.height;
+    if (e.shiftKey) setHLines(p=>[...p,y].sort((a,b)=>a-b));
+    else            setVLines(p=>[...p,x].sort((a,b)=>a-b));
+  };
+
+  const nCols = vLines.length+1, nRows = hLines.length+1;
+
+  return (
+    <div>
+      {/* Help row */}
+      <div style={{fontSize:'12px',color:'#64748b',marginBottom:'8px',lineHeight:'1.9'}}>
+        <span style={{background:'rgba(249,115,22,.15)',color:'#fb923c',padding:'1px 7px',borderRadius:'4px',marginRight:'6px'}}>點擊</span>新增 <b style={{color:'#f97316'}}>垂直線</b>
+        　<span style={{background:'rgba(34,211,238,.12)',color:'#22d3ee',padding:'1px 7px',borderRadius:'4px',marginRight:'6px'}}>Shift+點擊</span>新增 <b style={{color:'#22d3ee'}}>水平線</b>
+        　<b>拖曳</b>移動　<b>×</b> 刪除
+      </div>
+      {/* Count badge */}
+      <div style={{display:'flex',gap:'8px',alignItems:'center',marginBottom:'10px',flexWrap:'wrap'}}>
+        <span style={{background:'rgba(16,185,129,.15)',color:'#34d399',padding:'3px 12px',borderRadius:'20px',fontSize:'13px',fontWeight:'700'}}>
+          {nCols} 欄 × {nRows} 列 = {nCols*nRows} 格
+        </span>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setVLines([])} style={{color:'#fb923c',fontSize:'12px'}}>清除垂直線</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setHLines([])} style={{color:'#22d3ee',fontSize:'12px'}}>清除水平線</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{setVLines([]);setHLines([]);}} style={{color:'#94a3b8',fontSize:'12px'}}>全部清除</button>
+      </div>
+
+      {/* Image + overlay */}
+      <div ref={containerRef} className="ge-container" onClick={onContainerClick}>
+        <img src={imgURL} alt="grid-edit" onDragStart={e=>e.preventDefault()}/>
+
+        {/* Vertical lines */}
+        {vLines.map((x,i) => (
+          <div key={`v${i}`} className="ge-vline" style={{left:`${x*100}%`}} onMouseDown={startV(i)}>
+            <div className="ge-vline-vis"/>
+            <button className="ge-del" style={{top:'5px',left:'50%',transform:'translateX(-50%)'}} onMouseDown={e=>e.stopPropagation()} onClick={delV(i)}>×</button>
+          </div>
+        ))}
+
+        {/* Horizontal lines */}
+        {hLines.map((y,i) => (
+          <div key={`h${i}`} className="ge-hline" style={{top:`${y*100}%`}} onMouseDown={startH(i)}>
+            <div className="ge-hline-vis"/>
+            <button className="ge-del" style={{left:'5px',top:'50%',transform:'translateY(-50%)'}} onMouseDown={e=>e.stopPropagation()} onClick={delH(i)}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════
+   Main App
+════════════════════════════════════ */
+function App() {
+  const [step, setStep] = useState(1);
+
+  /* prompt generator */
+  const [pOpen,setPOpen]   = useState(true);
+  const [format,setFormat] = useState('character');
+  const [source,setSource] = useState('reference');
+  const [style,setStyle]   = useState('通用 Q版');
+  const [palette,setPalette]= useState('鮮豔風 (LINE 感)');
+  const [cats,setCats]     = useState(['日常用語']);
+  const [customName,setCustomName]=useState('');
+  const [cols,setCols]     = useState(8);
+  const [rows,setRows]     = useState(5);
+  const [prompt,setPrompt] = useState('');
+  const [copied,setCopied] = useState(false);
+
+  /* upload */
+  const [imgFile,setImgFile]=useState(null);
+  const [imgURL,setImgURL] = useState('');
+  const [dragOver,setDragOver]=useState(false);
+  const fileRef = useRef(null);
+
+  /* cut mode: 'auto' | 'manual' */
+  const [cutMode,setCutMode]   = useState('auto');
+  const [vLines,setVLines]     = useState([]);  // fractions 0-1 (vertical cut positions)
+  const [hLines,setHLines]     = useState([]);  // fractions 0-1 (horizontal cut positions)
+  const [detecting,setDetecting]=useState(false);
+  const [detectMsg,setDetectMsg]=useState('');
+
+  /* output */
+  const [outW,setOutW] = useState(370);
+  const [outH,setOutH] = useState(320);
+  const [rmGreen,setRmGreen]=useState(false);
+  const [processing,setProc]=useState(false);
+  const [progress,setProgress]=useState(0);
+  const [tiles,setTiles]=useState([]);
+
+  /* Sync lines whenever cols/rows change OR when switching to auto mode */
+  useEffect(() => {
+    if (cutMode==='auto') {
+      setVLines(Array.from({length:cols-1},(_,i)=>(i+1)/cols));
+      setHLines(Array.from({length:rows-1},(_,i)=>(i+1)/rows));
+      setDetectMsg('');
+    }
+  }, [cols, rows, cutMode]);
+
+  /* Prompt auto-rebuild */
+  useEffect(()=>{
+    setPrompt(buildPrompt({format,source,style,palette,cats,customName,cols,rows}));
+  },[format,source,style,palette,cats,customName,cols,rows]);
+
+  const copyPrompt = () => {
+    navigator.clipboard.writeText(prompt).then(()=>{
+      setCopied(true);
+      setStep(s => Math.max(s, 2));
+      setTimeout(()=>setCopied(false),2200);
+      window.open('https://chatgpt.com/?model=gpt-4o&q=','_blank');
+    });
+  };
+  const toggleCat = c => setCats(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
+
+  /* Load image */
+  const loadFile = async (file) => {
+    if(!file||!file.type.startsWith('image/'))return;
+    setImgFile(file);
+    const url=URL.createObjectURL(file);
+    setImgURL(url);
+    setTiles([]);
+    setStep(s => Math.max(s, 3));
+    // Start with uniform fallback
+    setVLines(Array.from({length:cols-1},(_,i)=>(i+1)/cols));
+    setHLines(Array.from({length:rows-1},(_,i)=>(i+1)/rows));
+    setCutMode('auto');
+    // Auto-detect immediately
+    setDetecting(true);
+    setDetectMsg('🔍 自動偵測網格中…');
+    const {hCuts, vCuts} = await autoDetectGrid(url);
+    if (hCuts.length > 0 || vCuts.length > 0) {
+      setHLines(hCuts);
+      setVLines(vCuts);
+      const nc = vCuts.length+1, nr = hCuts.length+1;
+      setCols(nc);
+      setRows(nr);
+      setCutMode('manual');
+      setDetectMsg(`✅ 已自動偵測：${nc} 欄 × ${nr} 列 = ${nc*nr} 格（可手動微調）`);
+    } else {
+      setDetectMsg('⚠️ 未偵測到明顯分隔線，使用均分切割，可手動調整。');
+    }
+    setDetecting(false);
+  };
+  const onDrop = e => { e.preventDefault(); setDragOver(false); loadFile(e.dataTransfer.files[0]); };
+
+  /* Switch cut mode — sync cols/rows from current lines when going auto */
+  const handleCutModeChange = (newMode) => {
+    if (newMode === 'auto') {
+      setCols(vLines.length + 1);
+      setRows(hLines.length + 1);
+    }
+    setCutMode(newMode);
+  };
+
+  /* Apply uniform grid to current cols/rows (usable in manual mode) */
+  const applyUniform = () => {
+    setVLines(Array.from({length:cols-1},(_,i)=>(i+1)/cols));
+    setHLines(Array.from({length:rows-1},(_,i)=>(i+1)/rows));
+  };
+
+  /* Auto-detect */
+  const handleDetect = async () => {
+    if (!imgURL) return;
+    setDetecting(true);
+    setDetectMsg('');
+    const {hCuts, vCuts} = await autoDetectGrid(imgURL);
+    if (hCuts.length===0 && vCuts.length===0) {
+      setDetectMsg('⚠️ 未偵測到明顯分隔線，請手動拖曳調整或使用自動均分。');
+    } else {
+      setHLines(hCuts);
+      setVLines(vCuts);
+      const nc = vCuts.length+1, nr = hCuts.length+1;
+      setCols(nc);
+      setRows(nr);
+      setCutMode('manual');
+      setDetectMsg(`✅ 偵測完成：${nc} 欄 × ${nr} 列 = ${nc*nr} 格（可手動微調）`);
+    }
+    setDetecting(false);
+  };
+
+  /* Crop */
+  const cropImage = useCallback(async () => {
+    if (!imgURL) return;
+    setProc(true); setProgress(0); setTiles([]);
+
+    const img = new Image();
+    img.src = imgURL;
+    await new Promise(r=>{img.onload=r;});
+
+    const W=img.naturalWidth, H=img.naturalHeight;
+    const xCuts = [0,...vLines,1].map(f=>Math.round(f*W));
+    const yCuts = [0,...hLines,1].map(f=>Math.round(f*H));
+    const totalCells = (xCuts.length-1)*(yCuts.length-1);
+    const out=[];
+
+    for (let r=0;r<yCuts.length-1;r++) {
+      for (let c=0;c<xCuts.length-1;c++) {
+        const sx=xCuts[c], sy=yCuts[r], sw=xCuts[c+1]-sx, sh=yCuts[r+1]-sy;
+        const cvs=document.createElement('canvas');
+        cvs.width=outW; cvs.height=outH;
+        const ctx=cvs.getContext('2d');
+        ctx.clearRect(0,0,outW,outH);
+        ctx.drawImage(img,sx,sy,sw,sh,0,0,outW,outH);
+        if (rmGreen){
+          const id=ctx.getImageData(0,0,outW,outH); const d=id.data;
+          for(let i=0;i<d.length;i+=4){const[rr,gg,bb]=[d[i],d[i+1],d[i+2]];if(gg>80&&gg>rr*1.4&&gg>bb*1.4)d[i+3]=0;}
+          ctx.putImageData(id,0,0);
+        }
+        out.push(cvs.toDataURL('image/png'));
+        setProgress(Math.round(out.length/totalCells*100));
+        await new Promise(r=>setTimeout(r,6));
+      }
+    }
+    setTiles(out); setProc(false); setStep(3);
+  }, [imgURL, vLines, hLines, outW, outH, rmGreen]);
+
+  /* Download ZIP */
+  const dlZip = useCallback(async()=>{
+    const zip=new JSZip();
+    tiles.forEach((d,i)=>zip.file(`${String(i+1).padStart(2,'0')}.png`,d.split(',')[1],{base64:true}));
+    const blob=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='line-stickers.zip'; a.click();
+  },[tiles]);
+
+  const dlOne = (url,i)=>{ const a=document.createElement('a'); a.href=url; a.download=`${String(i+1).padStart(2,'0')}.png`; a.click(); };
+
+  const nCols = vLines.length+1, nRows = hLines.length+1;
+
+  /* ── Render ── */
+  return (
+    <div style={{background:'#0e1117',minHeight:'100vh',color:'#e2e8f0'}}>
+      <div style={{maxWidth:'880px',margin:'0 auto',padding:'22px 16px'}}>
+
+        {/* Header */}
+        <div style={{display:'flex',alignItems:'flex-start',gap:'12px',marginBottom:'16px',flexWrap:'wrap'}}>
+          {/* Logo */}
+          <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg" style={{flexShrink:0}}>
+            <defs>
+              <linearGradient id="lg1" x1="0" y1="0" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#f97316"/>
+                <stop offset="100%" stopColor="#ef4444"/>
+              </linearGradient>
+              <linearGradient id="lg2" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#fbbf24"/>
+                <stop offset="100%" stopColor="#f97316"/>
+              </linearGradient>
+            </defs>
+            {/* Rounded square background */}
+            <rect width="52" height="52" rx="14" fill="url(#lg1)"/>
+            {/* Main chat bubble */}
+            <path d="M10 14C10 11.8 11.8 10 14 10H38C40.2 10 42 11.8 42 14V30C42 32.2 40.2 34 38 34H28L22 42V34H14C11.8 34 10 32.2 10 30V14Z" fill="white" fillOpacity="0.95"/>
+            {/* Smiley face inside bubble */}
+            <circle cx="20" cy="22" r="2" fill="#f97316"/>
+            <circle cx="32" cy="22" r="2" fill="#f97316"/>
+            <path d="M20 27 Q26 32 32 27" stroke="#f97316" strokeWidth="2" strokeLinecap="round" fill="none"/>
+            {/* Star sparkle top-right */}
+            <path d="M40 8 L41.2 11.2 L44.5 11.2 L41.9 13.2 L42.9 16.4 L40 14.4 L37.1 16.4 L38.1 13.2 L35.5 11.2 L38.8 11.2 Z" fill="#fbbf24"/>
+          </svg>
+          <div style={{flex:1}}>
+            <h1 style={{fontSize:'21px',fontWeight:'800',letterSpacing:'-0.3px'}}>LINE 表情貼自動化助手</h1>
+            <p style={{fontSize:'12px',color:'#64748b',marginTop:'2px'}}>極速製作 Line 表情貼工具</p>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:'4px',marginLeft:'auto',flexShrink:0}}>
+            <StepDot n={1} cur={step} label="提示詞"/>
+            <StepDot n={2} cur={step} label="生成圖"/>
+            <StepDot n={3} cur={step} label="切割打包"/>
+          </div>
+        </div>
+        <hr style={{border:'none',borderTop:'1px solid #1a2030',marginBottom:'18px'}}/>
+
+        {/* Step Guide */}
+        <StepGuide cur={step}/>
+
+        {/* ══ AI Prompt Generator ══ */}
+        <div className="card">
+          <div onClick={()=>setPOpen(!pOpen)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',userSelect:'none'}}>
+            <div className="card-title" style={{margin:0}}>🪄 AI 提示詞大師（{cols}×{rows} 版）</div>
+            <span style={{color:'#4a5568',fontSize:'13px'}}>{pOpen?'收起 ▲':'展開 ▼'}</span>
+          </div>
+          {pOpen && <div style={{marginTop:'16px'}}>
+            <div className="sec-label" style={{marginTop:'4px'}}>1. 內容樣式：</div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+              {[['character','⭐ 純主角 (Character Only)'],['charText','🖼 主角＋文字'],['textOnly','✏️ 純文字']].map(([v,l])=>(
+                <Pill key={v} label={l} selected={format===v} color="#f97316" onClick={()=>setFormat(v)}/>
+              ))}
+            </div>
+            <div className="sec-label">2. 源角主角：</div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',marginBottom:'14px'}}>
+              <Pill label="參考上傳圖片 (Reference Upload)" selected={source==='reference'} color="#8b5cf6" onClick={()=>setSource('reference')}/>
+              <Pill label="自訂角色 (Custom)" selected={source==='custom'} color="#8b5cf6" onClick={()=>setSource('custom')}/>
+              {source==='custom'&&<input value={customName} onChange={e=>setCustomName(e.target.value)} placeholder="角色名稱" style={{background:'#0e1117',border:'1px solid #374151',borderRadius:'8px',padding:'5px 12px',color:'#e2e8f0',fontSize:'13px',outline:'none',width:'160px'}}/>}
+            </div>
+            <div className="sec-label">3. 畫面風格：</div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+              {STYLES.map(s=><Pill key={s} label={s} selected={style===s} color="#06b6d4" onClick={()=>setStyle(s)}/>)}
+            </div>
+            <div className="sec-label">4. 配色組合：</div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+              {PALETTES.map(({label,color})=><Pill key={label} label={label} selected={palette===label} color={color} onClick={()=>setPalette(label)}/>)}
+            </div>
+            <div className="sec-label">5. 內容分類（可多選）：</div>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'16px'}}>
+              {CATEGORIES.map(c=><Pill key={c} label={c} selected={cats.includes(c)} color="#10b981" onClick={()=>toggleCat(c)}/>)}
+            </div>
+            <div style={{display:'flex',gap:'16px',alignItems:'center',marginBottom:'18px',flexWrap:'wrap'}}>
+              <span style={{fontSize:'12px',color:'#64748b'}}>網格設定：</span>
+              <label style={{fontSize:'13px',color:'#94a3b8'}}>欄數<input type="number" min="1" max="30" value={cols} onChange={e=>setCols(Math.max(1,+e.target.value||1))} style={{marginLeft:'7px',width:'60px',background:'#0e1117',border:'1px solid #374151',borderRadius:'7px',color:'#e2e8f0',padding:'4px 8px',fontSize:'13px',outline:'none'}}/></label>
+              <label style={{fontSize:'13px',color:'#94a3b8'}}>列數<input type="number" min="1" max="30" value={rows} onChange={e=>setRows(Math.max(1,+e.target.value||1))} style={{marginLeft:'7px',width:'60px',background:'#0e1117',border:'1px solid #374151',borderRadius:'7px',color:'#e2e8f0',padding:'4px 8px',fontSize:'13px',outline:'none'}}/></label>
+              <span style={{fontSize:'12px',color:'#4a5568'}}>= {cols*rows} 張</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+              <div style={{fontSize:'13px',fontWeight:'700'}}>✅ {cols}×{rows}（{cols*rows}張）Prompt 指引</div>
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                {copied&&<span style={{color:'#10b981',fontSize:'12px'}}>✓ 已複製！</span>}
+                <button className="btn btn-ghost" style={{fontSize:'12px',padding:'6px 14px'}} onClick={copyPrompt}>📋 複製 Prompt → ChatGPT</button>
+              </div>
+            </div>
+            <div className="prompt-area">{prompt}</div>
+          </div>}
+        </div>
+
+        {/* ══ Upload + Cut ══ */}
+        <div className="card">
+          <div className="card-title">📤 上傳 &amp; 切割設定</div>
+
+          <div className="info-box">
+            💡 請上傳 {cols}×{rows} 網格圖（JPG/PNG），建議尺寸 {cols*328}×{rows*328} px。支援自動偵測分隔線或手動拖曳調整。
+          </div>
+
+          {/* Drop zone */}
+          <div className={`drop-zone${dragOver?' over':''}`}
+            onClick={()=>fileRef.current?.click()}
+            onDrop={onDrop}
+            onDragOver={e=>{e.preventDefault();setDragOver(true)}}
+            onDragLeave={()=>setDragOver(false)}>
+            {imgURL ? (
+              <div>
+                <img src={imgURL} alt="preview" style={{maxWidth:'100%',maxHeight:'180px',objectFit:'contain',borderRadius:'10px',marginBottom:'10px'}}/>
+                <div style={{fontSize:'12px',color:'#64748b'}}>{imgFile?.name} — 點擊更換</div>
+              </div>
+            ) : (
+              <><div style={{fontSize:'44px',marginBottom:'10px'}}>📤</div><div style={{fontSize:'15px',fontWeight:'600',marginBottom:'6px'}}>選擇或拖放圖片至此處</div><div style={{fontSize:'12px',color:'#64748b'}}>JPG / PNG</div></>
+            )}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>loadFile(e.target.files[0])}/>
+
+          {imgURL && (<>
+            <div style={{height:'1px',background:'#1e2535',margin:'18px 0'}}/>
+
+            {/* Cut Mode Toggle */}
+            <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px',flexWrap:'wrap'}}>
+              <span style={{fontSize:'13px',fontWeight:'600',color:'#94a3b8'}}>切割模式：</span>
+              <button className={`mode-tab ${cutMode==='auto'?'mode-tab-on':'mode-tab-off'}`} onClick={()=>handleCutModeChange('auto')}>🤖 自動均分</button>
+              <button className={`mode-tab ${cutMode==='manual'?'mode-tab-on':'mode-tab-off'}`} onClick={()=>handleCutModeChange('manual')}>✋ 手動調整</button>
+              <button className="btn btn-cyan btn-sm" onClick={handleDetect} disabled={detecting} style={{marginLeft:'4px'}}>
+                {detecting ? '🔍 偵測中…' : '🔍 自動偵測網格'}
+              </button>
+            </div>
+
+            {detectMsg && (
+              <div style={{marginBottom:'14px'}} className={detectMsg.startsWith('✅')?'success-box':'info-box'}>{detectMsg}</div>
+            )}
+
+            {/* Shared cols/rows inputs — shown in both modes */}
+            <div style={{display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap',marginBottom:'14px',background:'#111827',padding:'12px 16px',borderRadius:'10px',border:'1px solid #1e2535'}}>
+              <label style={{fontSize:'13px',color:'#94a3b8'}}>欄數
+                <input type="number" min="1" max="30" value={cols}
+                  onChange={e=>setCols(Math.max(1,+e.target.value||1))}
+                  style={{marginLeft:'8px',width:'64px',background:'#0e1117',border:'1px solid #374151',borderRadius:'7px',color:'#e2e8f0',padding:'5px 8px',fontSize:'13px',outline:'none'}}/>
+              </label>
+              <label style={{fontSize:'13px',color:'#94a3b8'}}>列數
+                <input type="number" min="1" max="30" value={rows}
+                  onChange={e=>setRows(Math.max(1,+e.target.value||1))}
+                  style={{marginLeft:'8px',width:'64px',background:'#0e1117',border:'1px solid #374151',borderRadius:'7px',color:'#e2e8f0',padding:'5px 8px',fontSize:'13px',outline:'none'}}/>
+              </label>
+              <span style={{fontSize:'13px',color:'#10b981',fontWeight:'600'}}>=
+                {cutMode==='auto' ? ` ${cols*rows} 格` : ` ${nCols*nRows} 格（實際 ${nCols}×${nRows}）`}
+              </span>
+              {cutMode==='manual' && (
+                <button className="btn btn-ghost btn-sm" onClick={applyUniform} style={{marginLeft:'auto',color:'#f97316'}}>
+                  ↺ 按 {cols}×{rows} 均分套用
+                </button>
+              )}
+              {cutMode==='auto' && (
+                <span style={{fontSize:'12px',color:'#374151',marginLeft:'auto'}}>均勻分布，切割線 {cols-1}V + {rows-1}H</span>
+              )}
+            </div>
+
+            {/* Manual mode: GridEditor */}
+            {cutMode==='manual' && (
+              <div style={{marginBottom:'16px',background:'#111827',padding:'14px',borderRadius:'10px',border:'1px solid #1e2535'}}>
+                <GridEditor imgURL={imgURL} vLines={vLines} hLines={hLines} setVLines={setVLines} setHLines={setHLines}/>
+              </div>
+            )}
+
+            {/* Shared options */}
+            <div style={{display:'flex',gap:'20px',alignItems:'center',flexWrap:'wrap',marginBottom:'16px'}}>
+              <label className="check-row">
+                <input type="checkbox" checked={rmGreen} onChange={e=>setRmGreen(e.target.checked)}/>
+                自動去除綠色背景（去背）
+              </label>
+              <label style={{fontSize:'13px',color:'#94a3b8'}}>輸出尺寸
+                <select style={{marginLeft:'8px'}} value={`${outW}x${outH}`}
+                  onChange={e=>{const[w,h]=e.target.value.split('x').map(Number);setOutW(w);setOutH(h);}}>
+                  <option value="370x320">370×320（LINE 標準）</option>
+                  <option value="500x500">500×500（正方形）</option>
+                  <option value="740x640">740×640（LINE 最大）</option>
+                  <option value="320x320">320×320（最小）</option>
+                </select>
+              </label>
+              <span style={{fontSize:'12px',color:'#374151'}}>將切出 {nCols}×{nRows} = {nCols*nRows} 張</span>
+            </div>
+
+            <button className="btn btn-orange" style={{width:'100%',justifyContent:'center',padding:'13px',fontSize:'14px'}}
+              onClick={cropImage} disabled={processing}>
+              {processing ? `⚙️ 切割中… ${progress}%` : `✂️ 開始切割（${nCols*nRows} 張）`}
+            </button>
+            {processing && <div className="prog-track"><div className="prog-fill" style={{width:`${progress}%`}}/></div>}
+          </>)}
+        </div>
+
+        {/* ══ Grid Preview + Download ══ */}
+        {tiles.length > 0 && (
+          <div className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
+              <div className="card-title" style={{margin:0}}>🎉 切割完成！共 {tiles.length} 張貼圖</div>
+              <button className="btn btn-green" onClick={dlZip}>📦 打包下載 ZIP</button>
+            </div>
+            <div className="sticker-grid" style={{gridTemplateColumns:`repeat(${Math.min(nCols,12)},1fr)`}}>
+              {tiles.map((src,i)=>(
+                <div key={i} className="sticker-thumb" onClick={()=>dlOne(src,i)} title={`${String(i+1).padStart(2,'0')}.png`}>
+                  <img src={src} alt={`s${i+1}`} loading="lazy"/>
+                  <div className="sticker-num">{String(i+1).padStart(2,'0')}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:'12px',fontSize:'12px',color:'#4a5568',textAlign:'center'}}>
+              💡 點擊任意貼圖可下載單張 ｜「打包下載 ZIP」一次取得全部
+            </div>
+          </div>
+        )}
+
+        {/* ══ Instructions ══ */}
+        <div className="card">
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'20px'}}>
+            <div>
+              <div style={{fontSize:'14px',fontWeight:'700',color:'#f97316',marginBottom:'10px'}}>【LINE 表情貼自動化助手 步驟說明】</div>
+              <div style={{fontSize:'13px',fontWeight:'700',color:'#f97316',marginBottom:'5px'}}>Step 1：先讓你的貼圖「生」出來！</div>
+              <div style={{fontSize:'12px',color:'#94a3b8',lineHeight:'1.8',marginBottom:'12px'}}>使用上方「AI 提示詞大師」產生 Prompt，複製後自動跳到 ChatGPT 生成 {cols}×{rows} 網格貼圖大圖。</div>
+              <div style={{fontSize:'13px',fontWeight:'700',color:'#f97316',marginBottom:'5px'}}>Step 2：上傳並切割</div>
+              <div style={{background:'rgba(249,115,22,.08)',border:'1px solid rgba(249,115,22,.2)',borderRadius:'8px',padding:'10px 12px',fontSize:'12px',color:'#cbd5e1',lineHeight:'1.9',marginBottom:'12px'}}>
+                <b style={{color:'#fbbf24'}}>🤖 自動均分</b>：輸入欄列數，均勻切割<br/>
+                <b style={{color:'#fbbf24'}}>🔍 自動偵測</b>：分析圖片背景色找分隔線<br/>
+                <b style={{color:'#fbbf24'}}>✋ 手動調整</b>：點擊新增、拖曳移動、× 刪除
+              </div>
+              <div style={{fontSize:'13px',fontWeight:'700',color:'#f97316',marginBottom:'5px'}}>Step 3：到 LINE Creators Market！</div>
+              <div style={{fontSize:'12px',color:'#94a3b8',lineHeight:'1.8'}}>打開 <a href="https://creator.line.me" target="_blank">LINE Creators Market</a>，將 ZIP 解壓縮後逐一上傳即可。<br/><br/>
+                <span style={{color:'#64748b'}}>提醒：完成分割去背後的貼圖，也可以放在其他社群工具內使用，例如：IG、Messenger、WhatsApp、Telegram、Discord 等等。</span></div>
+            </div>
+            <div style={{borderLeft:'1px solid #1e2535',paddingLeft:'20px'}}>
+              <div style={{fontSize:'13px',fontWeight:'600',color:'#94a3b8',marginBottom:'10px'}}>手動切割技巧</div>
+              <div style={{fontSize:'12px',color:'#64748b',lineHeight:'2'}}>
+                ● <b style={{color:'#fb923c'}}>點擊</b>圖片 → 新增垂直切線（橘色）<br/>
+                ● <b style={{color:'#22d3ee'}}>Shift+點擊</b> → 新增水平切線（藍色）<br/>
+                ● <b>拖曳</b>切線 → 精確調整位置<br/>
+                ● 點 <b style={{color:'#ef4444'}}>×</b> 按鈕 → 刪除該切線<br/>
+                ● 「清除垂直線 / 水平線」一次清空<br/>
+                ● 可混合使用「自動偵測」再手動微調
+              </div>
+              <div style={{marginTop:'14px'}} className="success-box">
+                ✅ <b>建議流程：</b><br/>
+                1. 生成含 #00FF00 背景的網格大圖<br/>
+                2. 上傳 → 點「🔍 自動偵測網格」<br/>
+                3. 切到手動模式微調不準確的格線<br/>
+                4. 開啟去背 → 切割 → 打包下載 ZIP
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{textAlign:'center',fontSize:'11px',color:'#252d3d',paddingBottom:'28px',marginTop:'6px'}}>
+          LINE 表情貼自動化助手 ・ Made with rich2u ・ 僅供個人創作使用
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
