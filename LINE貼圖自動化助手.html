@@ -114,7 +114,7 @@ function buildPrompt({format,source,style,palette,cats,customName,cols,rows}) {
   const fmtNote  = format==='character' ? '✕ 不包含任何文字內容。' : format==='charText' ? '✓ 每格可包含簡短情緒詞（4 字以內）。' : '✓ 以大字體情緒文字為主視覺，角色縮小於角落。';
   const poses = getPoses(cats);
   const list  = poses.map((p,i)=>`${String(i+1).padStart(2,'0')}. ${p}`).join('\n');
-  return `請生成一張包含 ${count} 個不同動作與表情的 ${srcLabel} 貼圖集大圖。\n\n【最高優先級約束】\n・大圖規格：${cols*328} × ${rows*328} px\n・網格結構：${cols} 欄 × ${rows} 列\n・背景：#00FF00（純綠色，方便去背）\n・強制畫中：貼圖之間保留 30px 間隔。\n\n【風格與配色】\n・角色設定：請嚴格參考上傳圖片中的角色特徵（髮型、服裝、五官、配色），保持完全一致。\n・畫風設定：${style}，可愛、活潑、3D 平圖\n・配色風格：${palette}，高飽和度、色彩鮮明、對比度高，典型 LINE 貼圖配色。\n\n【畫面內容規範】\n・每一格僅包含：單一角色本體。\n・${fmtNote}\n\n【內容清單】\n${list}\n\n---\n✨ 提示詞由 LINE 表情貼自動化助手生成`;
+  return `請生成一張包含 ${count} 個不同動作與表情的 ${srcLabel} 貼圖集大圖。\n\n【最高優先級約束 — 必須完全遵守】\n・大圖規格：${cols*328} × ${rows*328} px\n・網格結構：${cols} 欄 × ${rows} 列，每格 328×328 px\n・背景：#00FF00（純綠色，方便去背）\n・格與格之間保留 30px 綠色分隔線\n・整張大圖四周保留 20px 綠色外框邊距（左右上下都要）\n\n【安全邊距 — 防止角色被裁切】\n・每個角色必須完整置中於格子內，不得超出格子邊界\n・角色本體（含手腳延伸）只能佔格子面積的 70%，四邊均留 15% 空白\n・最外圍一排格子（第一欄、最後欄、最上列、最下列）角色同樣縮小，絕對不可貼到圖片邊緣\n・所有角色大小保持一致，不因位置不同而改變\n\n【風格與配色】\n・角色設定：請嚴格參考上傳圖片中的角色特徵（髮型、服裝、五官、配色），保持完全一致。\n・畫風設定：${style}，可愛、活潑、3D 平圖\n・配色風格：${palette}，高飽和度、色彩鮮明、對比度高，典型 LINE 貼圖配色。\n\n【畫面內容規範】\n・每一格僅包含：單一角色本體。\n・${fmtNote}\n\n【內容清單】\n${list}\n\n---\n✨ 提示詞由 LINE 表情貼自動化助手生成`;
 }
 
 /* ─── Auto-detect grid ───
@@ -404,12 +404,15 @@ function App() {
   const [rows,setRows]     = useState(5);
   const [prompt,setPrompt] = useState('');
   const [copied,setCopied] = useState(false);
+  const [showStyleRef,setShowStyleRef] = useState(false);
+  const [showPaletteRef,setShowPaletteRef] = useState(false);
 
   /* upload */
   const [imgFile,setImgFile]=useState(null);
   const [imgURL,setImgURL] = useState('');
   const [dragOver,setDragOver]=useState(false);
   const fileRef = useRef(null);
+  const imgBlobRef = useRef(null); // track current blob URL for revoke
 
   /* cut mode: 'auto' | 'manual' */
   const [cutMode,setCutMode]   = useState('auto');
@@ -441,12 +444,19 @@ function App() {
   },[format,source,style,palette,cats,customName,cols,rows]);
 
   const copyPrompt = () => {
-    navigator.clipboard.writeText(prompt).then(()=>{
-      setCopied(true);
-      setStep(s => Math.max(s, 2));
-      setTimeout(()=>setCopied(false),2200);
-      window.open('https://chatgpt.com/?model=gpt-4o&q=','_blank');
-    });
+    // 模擬 <a> 點擊，最不會被瀏覽器封鎖
+    const a = document.createElement('a');
+    a.href = 'https://chatgpt.com/?q=' + encodeURIComponent(prompt);
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // 複製到剪貼板
+    navigator.clipboard.writeText(prompt).catch(()=>{});
+    setCopied(true);
+    setStep(s => Math.max(s, 2));
+    setTimeout(()=>setCopied(false),2200);
   };
   const toggleCat = c => setCats(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
 
@@ -454,7 +464,10 @@ function App() {
   const loadFile = async (file) => {
     if(!file||!file.type.startsWith('image/'))return;
     setImgFile(file);
+    // Fix #1: revoke previous blob URL to prevent memory leak
+    if (imgBlobRef.current) URL.revokeObjectURL(imgBlobRef.current);
     const url=URL.createObjectURL(file);
+    imgBlobRef.current = url;
     setImgURL(url);
     setTiles([]);
     setStep(s => Math.max(s, 3));
@@ -521,35 +534,43 @@ function App() {
     if (!imgURL) return;
     setProc(true); setProgress(0); setTiles([]);
 
-    const img = new Image();
-    img.src = imgURL;
-    await new Promise(r=>{img.onload=r;});
+    // Fix #3: wrap in try-catch so processing never gets stuck on error
+    try {
+      const img = new Image();
+      img.src = imgURL;
+      await new Promise((res,rej)=>{img.onload=res; img.onerror=rej;});
 
-    const W=img.naturalWidth, H=img.naturalHeight;
-    const xCuts = [0,...vLines,1].map(f=>Math.round(f*W));
-    const yCuts = [0,...hLines,1].map(f=>Math.round(f*H));
-    const totalCells = (xCuts.length-1)*(yCuts.length-1);
-    const out=[];
+      const W=img.naturalWidth, H=img.naturalHeight;
+      const xCuts = [0,...vLines,1].map(f=>Math.round(f*W));
+      const yCuts = [0,...hLines,1].map(f=>Math.round(f*H));
+      const totalCells = (xCuts.length-1)*(yCuts.length-1);
+      const out=[];
 
-    for (let r=0;r<yCuts.length-1;r++) {
-      for (let c=0;c<xCuts.length-1;c++) {
-        const sx=xCuts[c], sy=yCuts[r], sw=xCuts[c+1]-sx, sh=yCuts[r+1]-sy;
-        const cvs=document.createElement('canvas');
-        cvs.width=outW; cvs.height=outH;
-        const ctx=cvs.getContext('2d');
-        ctx.clearRect(0,0,outW,outH);
-        ctx.drawImage(img,sx,sy,sw,sh,0,0,outW,outH);
-        if (rmGreen){
-          const id=ctx.getImageData(0,0,outW,outH); const d=id.data;
-          for(let i=0;i<d.length;i+=4){const[rr,gg,bb]=[d[i],d[i+1],d[i+2]];if(gg>80&&gg>rr*1.4&&gg>bb*1.4)d[i+3]=0;}
-          ctx.putImageData(id,0,0);
+      for (let r=0;r<yCuts.length-1;r++) {
+        for (let c=0;c<xCuts.length-1;c++) {
+          const sx=xCuts[c], sy=yCuts[r], sw=xCuts[c+1]-sx, sh=yCuts[r+1]-sy;
+          const cvs=document.createElement('canvas');
+          cvs.width=outW; cvs.height=outH;
+          const ctx=cvs.getContext('2d');
+          ctx.clearRect(0,0,outW,outH);
+          ctx.drawImage(img,sx,sy,sw,sh,0,0,outW,outH);
+          if (rmGreen){
+            const id=ctx.getImageData(0,0,outW,outH); const d=id.data;
+            for(let i=0;i<d.length;i+=4){const[rr,gg,bb]=[d[i],d[i+1],d[i+2]];if(gg>80&&gg>rr*1.4&&gg>bb*1.4)d[i+3]=0;}
+            ctx.putImageData(id,0,0);
+          }
+          out.push(cvs.toDataURL('image/png'));
+          setProgress(Math.round(out.length/totalCells*100));
+          await new Promise(r=>setTimeout(r,6));
         }
-        out.push(cvs.toDataURL('image/png'));
-        setProgress(Math.round(out.length/totalCells*100));
-        await new Promise(r=>setTimeout(r,6));
       }
+      setTiles(out); setStep(3);
+    } catch(err) {
+      console.error('cropImage failed:', err);
+      alert('切割失敗，請確認圖片格式正確後再試。');
+    } finally {
+      setProc(false);
     }
-    setTiles(out); setProc(false); setStep(3);
   }, [imgURL, vLines, hLines, outW, outH, rmGreen]);
 
   /* Download ZIP */
@@ -557,7 +578,10 @@ function App() {
     const zip=new JSZip();
     tiles.forEach((d,i)=>zip.file(`${String(i+1).padStart(2,'0')}.png`,d.split(',')[1],{base64:true}));
     const blob=await zip.generateAsync({type:'blob'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='line-stickers.zip'; a.click();
+    // Fix #2: revoke blob URL after click to prevent memory leak
+    const blobUrl=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=blobUrl; a.download='line-stickers.zip'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(blobUrl), 1000);
   },[tiles]);
 
   const dlOne = (url,i)=>{ const a=document.createElement('a'); a.href=url; a.download=`${String(i+1).padStart(2,'0')}.png`; a.click(); };
@@ -606,8 +630,10 @@ function App() {
         </div>
         <hr style={{border:'none',borderTop:'1px solid #1a2030',marginBottom:'18px'}}/>
 
-        {/* Step Guide */}
-        <StepGuide cur={step}/>
+        {/* Step Guide — sticky */}
+        <div style={{position:'sticky',top:0,zIndex:50,marginLeft:'-16px',marginRight:'-16px',padding:'0 16px 12px',background:'linear-gradient(to bottom,#0e1117 70%,transparent)'}}>
+          <StepGuide cur={step}/>
+        </div>
 
         {/* ══ AI Prompt Generator ══ */}
         <div className="card">
@@ -629,12 +655,50 @@ function App() {
               {source==='custom'&&<input value={customName} onChange={e=>setCustomName(e.target.value)} placeholder="角色名稱" style={{background:'#0e1117',border:'1px solid #374151',borderRadius:'8px',padding:'5px 12px',color:'#e2e8f0',fontSize:'13px',outline:'none',width:'160px'}}/>}
             </div>
             <div className="sec-label">3. 畫面風格：</div>
-            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
               {STYLES.map(s=><Pill key={s} label={s} selected={style===s} color="#06b6d4" onClick={()=>setStyle(s)}/>)}
             </div>
+            <div style={{marginBottom:'14px'}}>
+              <button onClick={()=>setShowStyleRef(!showStyleRef)} style={{background:'transparent',border:'1px dashed #4a5568',borderRadius:'8px',padding:'6px 14px',fontSize:'12px',color:'#94a3b8',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px',transition:'all .18s'}}>
+                <span>{showStyleRef?'🔼':'🔽'}</span>
+                <span>{showStyleRef?'收起七種畫風範例':'📐 查看七種畫風範例'}</span>
+              </button>
+              {showStyleRef && (
+                <div style={{marginTop:'10px',background:'#090c14',border:'1px solid #1e2535',borderRadius:'10px',padding:'12px',overflow:'hidden'}}>
+                  <img src="style-reference.jpg" alt="七種畫風風格展示總覽" style={{width:'100%',maxHeight:'600px',objectFit:'contain',borderRadius:'6px',display:'block'}}/>
+                  <div style={{fontSize:'11px',color:'#64748b',marginTop:'8px',textAlign:'center'}}>🖱️ 點選上方風格按鈕後，可參考此圖查看各畫風實際效果</div>
+                </div>
+              )}
+            </div>
             <div className="sec-label">4. 配色組合：</div>
-            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}>
+            <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'8px'}}>
               {PALETTES.map(({label,color})=><Pill key={label} label={label} selected={palette===label} color={color} onClick={()=>setPalette(label)}/>)}
+            </div>
+            <div style={{marginBottom:'14px'}}>
+              <button onClick={()=>setShowPaletteRef(!showPaletteRef)} style={{background:'transparent',border:'1px dashed #4a5568',borderRadius:'8px',padding:'6px 14px',fontSize:'12px',color:'#94a3b8',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:'6px',transition:'all .18s'}}>
+                <span>{showPaletteRef?'🔼':'🔽'}</span>
+                <span>{showPaletteRef?'收起配色範例':'🎨 查看配色參考'}</span>
+              </button>
+              {showPaletteRef && (
+                <div style={{marginTop:'10px',display:'flex',gap:'10px',flexWrap:'wrap'}}>
+                  {[
+                    {name:'鮮豔風 (LINE 感)',colors:['#f97316','#fb923c','#fbbf24','#fef3c7','#1e293b']},
+                    {name:'柔和溫柔 (糖果粉)',colors:['#ec4899','#f472b6','#fbcfe8','#fce7f3','#4c1d95']},
+                    {name:'清爽冷冽',colors:['#06b6d4','#22d3ee','#67e8f9','#cffafe','#164e63']},
+                    {name:'玄古初韵',colors:['#b45309','#d97706','#f59e0b','#fde68a','#451a03']},
+                    {name:'夢幻粉彩',colors:['#a855f7','#c084fc','#d8b4fe','#ede9fe','#3b0764']},
+                  ].map(p=>(
+                    <div key={p.name}
+                      onClick={()=>setPalette(p.name)}
+                      style={{background:'#090c14',border:`2px solid ${palette===p.name?'#06b6d4':'#1e2535'}`,borderRadius:'10px',padding:'10px',flex:'1 1 auto',minWidth:'120px',maxWidth:'200px',cursor:'pointer',transition:'all .15s',overflow:'hidden'}}>
+                      <div style={{fontSize:'11px',fontWeight:'700',color:palette===p.name?'#06b6d4':'#e2e8f0',marginBottom:'6px'}}>{p.name}</div>
+                      <div style={{display:'flex',gap:'3px',flexWrap:'wrap'}}>
+                        {p.colors.map((c,i)=><div key={i} style={{width:'22px',height:'22px',borderRadius:'5px',background:c,border:'1px solid rgba(255,255,255,.1)',flexShrink:0}} title={c}/>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="sec-label">5. 內容分類（可多選）：</div>
             <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'16px'}}>
